@@ -222,7 +222,11 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!agency) return reply.code(401).send({ erreur: "Clé API invalide." });
     const { id } = req.params as { id: string };
     const body = z
-      .object({ profondeur: z.enum(["quick", "full"]).default("full") })
+      .object({
+        profondeur: z.enum(["quick", "full"]).default("full"),
+        // Choix du moteur IA par job (défaut : LLM_PROVIDER du serveur).
+        provider: z.enum(["anthropic", "xai", "openai-compatible"]).optional(),
+      })
       .parse(req.body ?? {});
     const site = await one<SiteRow>(
       `select * from sites where id = $1 and agency_id = $2`,
@@ -243,6 +247,7 @@ export function registerRoutes(app: FastifyInstance): void {
       url: site.url,
       profondeur: body.profondeur,
       offert: false,
+      provider: body.provider ?? null,
     });
     return reply.code(202).send({ diagnostic_id: diag.id, statut: "en_attente" });
   });
@@ -252,7 +257,7 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!agency) return reply.code(401).send({ erreur: "Clé API invalide." });
     const { id } = req.params as { id: string };
     const diag = await one(
-      `select id, site_id, url, profondeur, statut, cout, artefacts, offert, erreur, created_at, finished_at
+      `select id, site_id, url, profondeur, provider, statut, cout, artefacts, offert, erreur, created_at, finished_at
        from diagnostics where id = $1 and agency_id = $2`,
       [id, agency.id]
     );

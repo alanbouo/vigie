@@ -9,9 +9,9 @@ Vigie est un système à deux étages pour agences web et freelances SEO
 - **La Garde** (abonnement) — crawler déterministe : crawl hebdo complet,
   vérification quotidienne des signaux vitaux, moteur de diff, alertes
   immédiates sur les 🔴, Top 3 hebdo priorisé, Dossier historique.
-- **Le Diagnostic** (crédits) — audit profond SEO + GEO/AEO mené par le
-  Claude Agent SDK avec le skill `claude-seo` (fork pinné), rapport
-  white-label + findings structurés.
+- **Le Diagnostic** (crédits) — audit profond SEO + GEO/AEO mené par IA,
+  rapport white-label + findings structurés. Multi-LLM : Claude Agent SDK +
+  skill `claude-seo` (défaut), xAI/Grok, ou tout endpoint compatible OpenAI.
 - **Visibilité IA** (v1.5, hors MVP) — suivi de présence dans les réponses IA
   (Perplexity, AI Overviews). Tables préparées, module non construit.
 
@@ -48,6 +48,23 @@ algorithme de priorisation.**
    propose le Diagnostic en un clic sur les 🔴.
 6. Le Diagnostic tourne en job asynchrone, produit rapport white-label +
    findings JSON validés, facturé en crédits **uniquement s'il aboutit**.
+
+### Choix du moteur IA du Diagnostic (multi-LLM)
+
+Deux modes, même contrat de sortie (`rapport.md` + `findings.json` validé
+par le schéma commun) — le dashboard et le Top 3 ne voient aucune différence :
+
+| Provider | Mode | Fonctionnement |
+|---|---|---|
+| `anthropic` (défaut) | agent-sdk | Audit agentique complet : Claude Agent SDK + skill `claude-seo`, navigation autonome |
+| `xai` | chat | Notre crawler collecte les données, Grok (`grok-4` par défaut, API `https://api.x.ai/v1`) analyse et rédige |
+| `openai-compatible` | chat | Idem avec n'importe quel endpoint `/chat/completions` (`LLM_BASE_URL` + `LLM_MODEL` requis) |
+
+Configuration serveur par `LLM_PROVIDER` (+ `XAI_API_KEY` / `LLM_API_KEY`,
+`LLM_MODEL`, `LLM_BASE_URL`, voir `.env.example`). Surcharge possible par
+job : `POST /sites/:id/diagnostic` accepte `{"provider": "xai"}`. Le
+provider et le modèle utilisés sont journalisés dans `cost_log` avec les
+tokens consommés (tarifs configurables via `LLM_COST_PER_MTOK_*`).
 
 ## Démarrage
 

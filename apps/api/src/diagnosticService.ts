@@ -1,6 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import * as path from "node:path";
-import { runDiagnostic, diagnosticToFindings } from "@vigie/diagnostic";
+import {
+  runDiagnostic,
+  diagnosticToFindings,
+  resolveProvider,
+  missingKeyError,
+  type ProviderConfig,
+} from "@vigie/diagnostic";
 import { one, q } from "./db.js";
 import { env } from "./env.js";
 import { envoyerDiagnosticTermine } from "./emails.js";
@@ -15,17 +21,37 @@ import { envoyerDiagnosticTermine } from "./emails.js";
 
 let workerRunning = false;
 
+/** Résout le provider LLM effectif (défaut serveur, override par job). */
+export function resolveJobProvider(override?: string | null): ProviderConfig {
+  return resolveProvider(
+    {
+      provider: env.llmProvider,
+      anthropicApiKey: env.anthropicApiKey,
+      xaiApiKey: env.xaiApiKey,
+      llmApiKey: env.llmApiKey,
+      llmBaseUrl: env.llmBaseUrl,
+      llmModel: env.llmModel,
+      llmCostPerMTokInputUsd: env.llmCostPerMTokInputUsd,
+      llmCostPerMTokOutputUsd: env.llmCostPerMTokOutputUsd,
+    },
+    override ?? undefined
+  );
+}
+
 export async function creerDiagnostic(opts: {
   siteId: string | null;
   agencyId: string;
   url: string;
   profondeur: "quick" | "full";
   offert: boolean;
+  provider?: string | null;
 }): Promise<{ id: string }> {
+  // Valide le provider dès la création (erreur claire avant la mise en file).
+  resolveJobProvider(opts.provider);
   const row = await one<{ id: string }>(
-    `insert into diagnostics (site_id, agency_id, url, profondeur, offert)
-     values ($1, $2, $3, $4, $5) returning id`,
-    [opts.siteId, opts.agencyId, opts.url, opts.profondeur, opts.offert]
+    `insert into diagnostics (site_id, agency_id, url, profondeur, offert, provider)
+     values ($1, $2, $3, $4, $5, $6) returning id`,
+    [opts.siteId, opts.agencyId, opts.url, opts.profondeur, opts.offert, opts.provider ?? null]
   );
   void processQueue();
   return { id: row!.id };
@@ -51,13 +77,14 @@ export async function processQueue(): Promise<void> {
         url: string;
         profondeur: "quick" | "full";
         offert: boolean;
+        provider: string | null;
       }>(
         `update diagnostics set statut = 'en_cours'
          where id = (
            select id from diagnostics where statut = 'en_attente'
            order by created_at limit 1 for update skip locked
          )
-         returning id, site_id, agency_id, url, profondeur, offert`
+         returning id, site_id, agency_id, url, profondeur, offert, provider`
       );
       if (!job) break;
       await executeJob(job);
@@ -74,11 +101,23 @@ async function executeJob(job: {
   url: string;
   profondeur: "quick" | "full";
   offert: boolean;
+  provider: string | null;
 }): Promise<void> {
-  if (!env.anthropicApiKey) {
+  let provider: ProviderConfig;
+  try {
+    provider = resolveJobProvider(job.provider);
+  } catch (err) {
     await q(
       `update diagnostics set statut = 'erreur', erreur = $2, finished_at = now() where id = $1`,
-      [job.id, "ANTHROPIC_API_KEY absent : worker Diagnostic non configuré."]
+      [job.id, err instanceof Error ? err.message : String(err)]
+    );
+    return;
+  }
+  const keyError = missingKeyError(provider);
+  if (keyError) {
+    await q(
+      `update diagnostics set statut = 'erreur', erreur = $2, finished_at = now() where id = $1`,
+      [job.id, keyError]
     );
     return;
   }
@@ -86,18 +125,26 @@ async function executeJob(job: {
   const outputDir = path.join(env.artifactsDir, job.agency_id, job.id);
   await mkdir(outputDir, { recursive: true });
 
-  const result = await runDiagnostic({
-    url: job.url,
-    profondeur: job.profondeur,
-    workspaceDir: env.diagnosticWorkspace,
-    outputDir,
-  });
+  const result = await runDiagnostic(
+    {
+      url: job.url,
+      profondeur: job.profondeur,
+      workspaceDir: env.diagnosticWorkspace,
+      outputDir,
+    },
+    provider
+  );
 
   // Coût du job instrumenté dès J1 (§4.3).
   await q(
     `insert into cost_log (scope, ref_id, site_id, cout_usd, details)
      values ('diagnostic', $1, $2, $3, $4)`,
-    [job.id, job.site_id, result.cout.totalCostUsd, JSON.stringify(result.cout)]
+    [
+      job.id,
+      job.site_id,
+      result.cout.totalCostUsd,
+      JSON.stringify({ ...result.cout, provider: provider.provider, model: provider.model }),
+    ]
   );
 
   if (!result.ok || !result.output) {

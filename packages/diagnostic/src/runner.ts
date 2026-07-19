@@ -2,6 +2,8 @@ import { readFile, mkdir } from "node:fs/promises";
 import * as path from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { DiagnosticOutputSchema, OUTPUT_SCHEMA_FOR_PROMPT, type DiagnosticOutput } from "./schema.js";
+import type { ProviderConfig } from "./providers.js";
+import { runChatDiagnostic } from "./chatRunner.js";
 
 /**
  * Le Diagnostic (§4) : 1 audit = 1 job asynchrone dans un conteneur éphémère.
@@ -116,7 +118,24 @@ async function runQuery(
   return { costUsd, inputTokens, outputTokens, numTurns };
 }
 
+/**
+ * Point d'entrée du Diagnostic. Sans provider (ou provider Anthropic),
+ * l'audit tourne en mode agentique via le Claude Agent SDK + skill claude-seo.
+ * Avec un provider en mode "chat" (xAI/Grok, OpenAI-compatible), la collecte
+ * est faite par notre crawler et l'analyse par le LLM choisi — même schéma
+ * de sortie dans les deux cas.
+ */
 export async function runDiagnostic(
+  config: DiagnosticJobConfig,
+  provider?: ProviderConfig
+): Promise<DiagnosticRunResult> {
+  if (provider && provider.mode === "chat") {
+    return runChatDiagnostic(config, provider);
+  }
+  return runAgentDiagnostic(config);
+}
+
+async function runAgentDiagnostic(
   config: DiagnosticJobConfig
 ): Promise<DiagnosticRunResult> {
   const started = Date.now();

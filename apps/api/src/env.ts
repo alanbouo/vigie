@@ -7,8 +7,16 @@ export const env = {
   // Emails (Resend)
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "Vigie <alertes@vigie.app>",
-  // Diagnostic (Claude Agent SDK)
+  // Diagnostic — provider LLM : anthropic (Agent SDK + claude-seo),
+  // xai (Grok, API compatible OpenAI) ou openai-compatible (endpoint libre).
+  llmProvider: process.env.LLM_PROVIDER ?? "anthropic",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  xaiApiKey: process.env.XAI_API_KEY ?? "",
+  llmApiKey: process.env.LLM_API_KEY ?? "",
+  llmBaseUrl: process.env.LLM_BASE_URL ?? "",
+  llmModel: process.env.LLM_MODEL ?? "",
+  llmCostPerMTokInputUsd: Number(process.env.LLM_COST_PER_MTOK_INPUT_USD ?? 0),
+  llmCostPerMTokOutputUsd: Number(process.env.LLM_COST_PER_MTOK_OUTPUT_USD ?? 0),
   diagnosticWorkspace:
     process.env.DIAGNOSTIC_WORKSPACE ??
     new URL("../../../infra/diagnostic-workspace", import.meta.url).pathname,
