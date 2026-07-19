@@ -1,0 +1,22 @@
+{
+  "name": "vigie",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Vigie — le système de santé de votre visibilité, sur Google et dans les réponses des IA.",
+  "workspaces": [
+    "packages/*",
+    "apps/api"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "typecheck": "tsc -b packages/core packages/garde packages/diagnostic apps/api",
+    "migrate": "node --experimental-strip-types apps/api/scripts/migrate.ts",
+    "dev:api": "npm run dev -w @vigie/api"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
+  }
+}

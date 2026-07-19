@@ -1,0 +1,5 @@
+# Commit pinné du fork claude-seo (§4.1 : mises à jour testées à notre rythme).
+# Mettre à jour via scripts/vendor-claude-seo.sh <commit-sha>.
+# vendored: version interne initiale (pas encore synchronisée sur l'upstream)
+UPSTREAM=https://github.com/anthropics/claude-seo
+COMMIT=none-vendored-internal-v1

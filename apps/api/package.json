@@ -1,0 +1,25 @@
+{
+  "name": "@vigie/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b && node dist/server.js",
+    "start": "node dist/server.js",
+    "migrate": "node --experimental-strip-types scripts/migrate.ts"
+  },
+  "dependencies": {
+    "@vigie/core": "*",
+    "@vigie/diagnostic": "*",
+    "@vigie/garde": "*",
+    "fastify": "^5.2.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.13.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.11.10"
+  }
+}

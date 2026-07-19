@@ -1,0 +1,123 @@
+:root {
+  --bg: #0e1116;
+  --panel: #161b23;
+  --border: #262d38;
+  --text: #e6e9ee;
+  --muted: #98a2b3;
+  --accent: #4f8cff;
+  --critique: #ff5d5d;
+  --important: #ffb020;
+  --ok: #3ddc97;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.55;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 5rem;
+}
+
+h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin: 2rem 0 0.75rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.badge.critique { background: rgba(255, 93, 93, 0.15); color: var(--critique); }
+.badge.important { background: rgba(255, 176, 32, 0.15); color: var(--important); }
+.badge.info { background: rgba(152, 162, 179, 0.15); color: var(--muted); }
+.badge.ok { background: rgba(61, 220, 151, 0.15); color: var(--ok); }
+
+button, .btn {
+  background: var(--accent);
+  border: none;
+  color: white;
+  border-radius: 8px;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.95rem;
+  width: 100%;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+nav {
+  display: flex;
+  gap: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+nav .brand {
+  font-weight: 700;
+  color: var(--text);
+}
+
+pre {
+  white-space: pre-wrap;
+  font-family: inherit;
+}
