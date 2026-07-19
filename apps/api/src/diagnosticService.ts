@@ -21,20 +21,26 @@ import { envoyerDiagnosticTermine } from "./emails.js";
 
 let workerRunning = false;
 
-/** Résout le provider LLM effectif (défaut serveur, override par job). */
-export function resolveJobProvider(override?: string | null): ProviderConfig {
+/** Résout provider + mode effectifs (défauts serveur, overrides par job). */
+export function resolveJobProvider(
+  providerOverride?: string | null,
+  modeOverride?: string | null
+): ProviderConfig {
   return resolveProvider(
     {
       provider: env.llmProvider,
+      mode: env.llmMode,
       anthropicApiKey: env.anthropicApiKey,
       xaiApiKey: env.xaiApiKey,
       llmApiKey: env.llmApiKey,
       llmBaseUrl: env.llmBaseUrl,
+      llmAgentBaseUrl: env.llmAgentBaseUrl,
       llmModel: env.llmModel,
       llmCostPerMTokInputUsd: env.llmCostPerMTokInputUsd,
       llmCostPerMTokOutputUsd: env.llmCostPerMTokOutputUsd,
     },
-    override ?? undefined
+    providerOverride ?? undefined,
+    modeOverride ?? undefined
   );
 }
 
@@ -45,13 +51,22 @@ export async function creerDiagnostic(opts: {
   profondeur: "quick" | "full";
   offert: boolean;
   provider?: string | null;
+  mode?: string | null;
 }): Promise<{ id: string }> {
-  // Valide le provider dès la création (erreur claire avant la mise en file).
-  resolveJobProvider(opts.provider);
+  // Valide provider + mode dès la création (erreur claire avant la mise en file).
+  resolveJobProvider(opts.provider, opts.mode);
   const row = await one<{ id: string }>(
-    `insert into diagnostics (site_id, agency_id, url, profondeur, offert, provider)
-     values ($1, $2, $3, $4, $5, $6) returning id`,
-    [opts.siteId, opts.agencyId, opts.url, opts.profondeur, opts.offert, opts.provider ?? null]
+    `insert into diagnostics (site_id, agency_id, url, profondeur, offert, provider, mode)
+     values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+    [
+      opts.siteId,
+      opts.agencyId,
+      opts.url,
+      opts.profondeur,
+      opts.offert,
+      opts.provider ?? null,
+      opts.mode ?? null,
+    ]
   );
   void processQueue();
   return { id: row!.id };
@@ -78,13 +93,14 @@ export async function processQueue(): Promise<void> {
         profondeur: "quick" | "full";
         offert: boolean;
         provider: string | null;
+        mode: string | null;
       }>(
         `update diagnostics set statut = 'en_cours'
          where id = (
            select id from diagnostics where statut = 'en_attente'
            order by created_at limit 1 for update skip locked
          )
-         returning id, site_id, agency_id, url, profondeur, offert, provider`
+         returning id, site_id, agency_id, url, profondeur, offert, provider, mode`
       );
       if (!job) break;
       await executeJob(job);
@@ -102,10 +118,11 @@ async function executeJob(job: {
   profondeur: "quick" | "full";
   offert: boolean;
   provider: string | null;
+  mode: string | null;
 }): Promise<void> {
   let provider: ProviderConfig;
   try {
-    provider = resolveJobProvider(job.provider);
+    provider = resolveJobProvider(job.provider, job.mode);
   } catch (err) {
     await q(
       `update diagnostics set statut = 'erreur', erreur = $2, finished_at = now() where id = $1`,
@@ -143,7 +160,12 @@ async function executeJob(job: {
       job.id,
       job.site_id,
       result.cout.totalCostUsd,
-      JSON.stringify({ ...result.cout, provider: provider.provider, model: provider.model }),
+      JSON.stringify({
+        ...result.cout,
+        provider: provider.provider,
+        mode: provider.mode,
+        model: provider.model,
+      }),
     ]
   );
 

@@ -1,76 +1,130 @@
 /**
  * Abstraction de provider LLM pour le Diagnostic.
  *
- * Deux modes d'exécution :
- * - "agent-sdk" (Anthropic) : audit agentique complet via le Claude Agent SDK
- *   et le skill claude-seo (navigation autonome, WebFetch, etc.).
- * - "chat" (xAI/Grok, OpenAI, ou tout endpoint compatible /chat/completions) :
- *   la collecte de données est faite par notre crawler déterministe, puis le
- *   LLM analyse et produit rapport + findings validés par le même schéma.
+ * Le provider (qui répond) et le mode (comment l'audit est mené) sont
+ * indépendants :
  *
- * Le schéma de sortie (§4.2) est identique quel que soit le provider : le
- * dashboard, l'historique et le Top 3 ne voient aucune différence.
+ * - mode "agent-sdk" : audit agentique complet via le Claude Agent SDK et le
+ *   skill claude-seo (l'agent navigue lui-même, creuse ses hypothèses).
+ *   Fonctionne avec Anthropic, et avec xAI via son endpoint compatible
+ *   Anthropic (https://api.x.ai — à valider sur sites de test avant de
+ *   facturer, le suivi du protocole d'outils dépend du modèle).
+ * - mode "chat" : la collecte est faite par notre crawler déterministe, puis
+ *   le LLM analyse via /chat/completions (xAI/Grok, OpenAI, endpoint libre).
+ *   Coût prévisible, mais le modèle ne voit que le digest du crawler.
+ *
+ * Le schéma de sortie (§4.2) est identique quels que soient provider et
+ * mode : le dashboard, l'historique et le Top 3 ne voient aucune différence.
  */
 
 export type ProviderId = "anthropic" | "xai" | "openai-compatible";
+export type RunMode = "agent-sdk" | "chat";
 
 export interface ProviderConfig {
   provider: ProviderId;
-  /** Mode d'exécution : agent complet ou analyse chat sur données crawler. */
-  mode: "agent-sdk" | "chat";
+  mode: RunMode;
   apiKey: string;
-  /** Base URL de l'API pour le mode chat (ex. https://api.x.ai/v1). */
+  /** Base URL de l'API /chat/completions pour le mode chat (ex. https://api.x.ai/v1). */
   baseUrl: string;
+  /**
+   * Base URL du protocole Anthropic pour le mode agent-sdk quand le provider
+   * n'est pas Anthropic (ex. https://api.x.ai). Vide = endpoint par défaut du SDK.
+   */
+  agentBaseUrl: string;
   model: string;
-  /** Coûts par million de tokens (instrumentation §10). 0 = inconnu. */
+  /** Coûts par million de tokens (instrumentation §10, mode chat). 0 = inconnu. */
   costPerMTokInputUsd: number;
   costPerMTokOutputUsd: number;
 }
 
-export const PROVIDER_DEFAULTS: Record<ProviderId, Partial<ProviderConfig>> = {
+interface ProviderDefaults {
+  defaultMode: RunMode;
+  supportedModes: RunMode[];
+  baseUrl: string;
+  agentBaseUrl: string;
+  model: string;
+}
+
+export const PROVIDER_DEFAULTS: Record<ProviderId, ProviderDefaults> = {
   anthropic: {
-    mode: "agent-sdk",
+    defaultMode: "agent-sdk",
+    supportedModes: ["agent-sdk"],
     baseUrl: "https://api.anthropic.com",
-    model: "", // le modèle par défaut du Agent SDK
+    agentBaseUrl: "", // endpoint par défaut du SDK
+    model: "", // modèle par défaut du SDK
   },
   xai: {
-    mode: "chat",
+    // Les deux modes sont disponibles ; chat par défaut (comportement le plus
+    // prévisible), agent-sdk en opt-in via LLM_MODE ou par job.
+    defaultMode: "chat",
+    supportedModes: ["chat", "agent-sdk"],
     baseUrl: "https://api.x.ai/v1",
+    agentBaseUrl: "https://api.x.ai",
     model: "grok-4",
   },
   "openai-compatible": {
-    mode: "chat",
+    defaultMode: "chat",
+    supportedModes: ["chat"], // pas de protocole Anthropic garanti
     baseUrl: "",
+    agentBaseUrl: "",
     model: "",
   },
 };
 
 export interface ProviderEnv {
   provider?: string;
+  /** Mode par défaut du serveur (LLM_MODE) ; vide = défaut du provider. */
+  mode?: string;
   anthropicApiKey?: string;
   xaiApiKey?: string;
   llmApiKey?: string;
   llmBaseUrl?: string;
+  /** Override de l'endpoint Anthropic-compatible en mode agent (LLM_AGENT_BASE_URL). */
+  llmAgentBaseUrl?: string;
   llmModel?: string;
   llmCostPerMTokInputUsd?: number;
   llmCostPerMTokOutputUsd?: number;
 }
 
 /**
- * Résout la configuration du provider depuis l'environnement.
- * `override` permet un choix par job (colonne diagnostics.provider).
+ * Résout la configuration effective depuis l'environnement.
+ * `providerOverride` et `modeOverride` permettent un choix par job
+ * (colonnes diagnostics.provider / diagnostics.mode).
  */
 export function resolveProvider(
   env: ProviderEnv,
-  override?: string
+  providerOverride?: string,
+  modeOverride?: string
 ): ProviderConfig {
-  const id = (override ?? env.provider ?? "anthropic") as ProviderId;
+  const id = (providerOverride ?? env.provider ?? "anthropic") as ProviderId;
   if (!(id in PROVIDER_DEFAULTS)) {
     throw new Error(
       `Provider LLM inconnu : ${id} (attendu : anthropic, xai, openai-compatible)`
     );
   }
   const defaults = PROVIDER_DEFAULTS[id];
+
+  // Le mode serveur (LLM_MODE) est un défaut souple : s'il n'est pas supporté
+  // par le provider résolu, on retombe sur le défaut du provider. Seul un
+  // override explicite par job est strict (erreur claire).
+  let resolvedMode: RunMode;
+  if (modeOverride) {
+    if (!["agent-sdk", "chat"].includes(modeOverride)) {
+      throw new Error(`Mode d'audit inconnu : ${modeOverride} (attendu : agent-sdk, chat)`);
+    }
+    resolvedMode = modeOverride as RunMode;
+    if (!defaults.supportedModes.includes(resolvedMode)) {
+      throw new Error(
+        `Le provider ${id} ne supporte pas le mode ${resolvedMode} (modes : ${defaults.supportedModes.join(", ")}).`
+      );
+    }
+  } else {
+    const envMode = env.mode?.trim() ?? "";
+    resolvedMode =
+      envMode && defaults.supportedModes.includes(envMode as RunMode)
+        ? (envMode as RunMode)
+        : defaults.defaultMode;
+  }
 
   const apiKey =
     id === "anthropic"
@@ -81,10 +135,11 @@ export function resolveProvider(
 
   const config: ProviderConfig = {
     provider: id,
-    mode: defaults.mode!,
+    mode: resolvedMode,
     apiKey,
-    baseUrl: env.llmBaseUrl?.trim() || defaults.baseUrl || "",
-    model: env.llmModel?.trim() || defaults.model || "",
+    baseUrl: env.llmBaseUrl?.trim() || defaults.baseUrl,
+    agentBaseUrl: env.llmAgentBaseUrl?.trim() || defaults.agentBaseUrl,
+    model: env.llmModel?.trim() || defaults.model,
     costPerMTokInputUsd: env.llmCostPerMTokInputUsd ?? 0,
     costPerMTokOutputUsd: env.llmCostPerMTokOutputUsd ?? 0,
   };

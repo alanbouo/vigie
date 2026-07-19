@@ -10,10 +10,13 @@ export const env = {
   // Diagnostic — provider LLM : anthropic (Agent SDK + claude-seo),
   // xai (Grok, API compatible OpenAI) ou openai-compatible (endpoint libre).
   llmProvider: process.env.LLM_PROVIDER ?? "anthropic",
+  // Mode d'audit par défaut : agent-sdk (agentique) ou chat. Vide = défaut du provider.
+  llmMode: process.env.LLM_MODE ?? "",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   xaiApiKey: process.env.XAI_API_KEY ?? "",
   llmApiKey: process.env.LLM_API_KEY ?? "",
   llmBaseUrl: process.env.LLM_BASE_URL ?? "",
+  llmAgentBaseUrl: process.env.LLM_AGENT_BASE_URL ?? "",
   llmModel: process.env.LLM_MODEL ?? "",
   llmCostPerMTokInputUsd: Number(process.env.LLM_COST_PER_MTOK_INPUT_USD ?? 0),
   llmCostPerMTokOutputUsd: Number(process.env.LLM_COST_PER_MTOK_OUTPUT_USD ?? 0),

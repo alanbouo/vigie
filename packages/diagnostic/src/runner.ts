@@ -77,9 +77,27 @@ Règles pour findings.json :
 - "site" = "${config.url}".`;
 }
 
+/**
+ * Variables d'environnement du sous-processus Agent SDK selon le provider.
+ * Pour xAI, on pointe le protocole Anthropic vers son endpoint compatible
+ * (agentBaseUrl) avec la clé xAI — le reste du process env est conservé.
+ */
+function agentEnv(provider?: ProviderConfig): Record<string, string> | undefined {
+  if (!provider || provider.provider === "anthropic") return undefined;
+  const base = Object.fromEntries(
+    Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
+  );
+  return {
+    ...base,
+    ANTHROPIC_BASE_URL: provider.agentBaseUrl,
+    ANTHROPIC_API_KEY: provider.apiKey,
+  };
+}
+
 async function runQuery(
   prompt: string,
-  config: DiagnosticJobConfig
+  config: DiagnosticJobConfig,
+  provider?: ProviderConfig
 ): Promise<{ costUsd: number; inputTokens: number; outputTokens: number; numTurns: number }> {
   let costUsd = 0;
   let inputTokens = 0;
@@ -96,6 +114,9 @@ async function runQuery(
       allowedTools: ["Skill", "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Write", "Bash"],
       permissionMode: "acceptEdits",
       maxTurns: config.maxTurns ?? DEFAULTS.maxTurns,
+      // Provider non-Anthropic en mode agentique : modèle + endpoint dédiés.
+      ...(provider?.model ? { model: provider.model } : {}),
+      ...(agentEnv(provider) ? { env: agentEnv(provider) } : {}),
     },
   });
 
@@ -119,11 +140,11 @@ async function runQuery(
 }
 
 /**
- * Point d'entrée du Diagnostic. Sans provider (ou provider Anthropic),
- * l'audit tourne en mode agentique via le Claude Agent SDK + skill claude-seo.
- * Avec un provider en mode "chat" (xAI/Grok, OpenAI-compatible), la collecte
- * est faite par notre crawler et l'analyse par le LLM choisi — même schéma
- * de sortie dans les deux cas.
+ * Point d'entrée du Diagnostic. Le provider et le mode sont indépendants :
+ * - mode "agent-sdk" : audit agentique (Claude Agent SDK + skill claude-seo),
+ *   avec Anthropic ou avec xAI via son endpoint compatible Anthropic ;
+ * - mode "chat" : collecte par notre crawler, analyse via /chat/completions.
+ * Même schéma de sortie dans tous les cas.
  */
 export async function runDiagnostic(
   config: DiagnosticJobConfig,
@@ -132,11 +153,12 @@ export async function runDiagnostic(
   if (provider && provider.mode === "chat") {
     return runChatDiagnostic(config, provider);
   }
-  return runAgentDiagnostic(config);
+  return runAgentDiagnostic(config, provider);
 }
 
 async function runAgentDiagnostic(
-  config: DiagnosticJobConfig
+  config: DiagnosticJobConfig,
+  provider?: ProviderConfig
 ): Promise<DiagnosticRunResult> {
   const started = Date.now();
   const cout = {
@@ -150,7 +172,7 @@ async function runAgentDiagnostic(
   try {
     await mkdir(config.outputDir, { recursive: true });
 
-    const usage = await runQuery(buildPrompt(config), config);
+    const usage = await runQuery(buildPrompt(config), config, provider);
     cout.totalCostUsd += usage.costUsd;
     cout.inputTokens += usage.inputTokens;
     cout.outputTokens += usage.outputTokens;
@@ -170,7 +192,8 @@ async function runAgentDiagnostic(
       if (attempt === maxRetries) break;
       const repair = await runQuery(
         `Le fichier ${path.join(config.outputDir, "findings.json")} est invalide : ${parsed.error}\n\nRéécris-le pour qu'il soit STRICTEMENT conforme au schéma suivant (uniquement le JSON, aucun texte autour) :\n${OUTPUT_SCHEMA_FOR_PROMPT}`,
-        { ...config, maxTurns: 10 }
+        { ...config, maxTurns: 10 },
+        provider
       );
       cout.totalCostUsd += repair.costUsd;
       cout.inputTokens += repair.inputTokens;

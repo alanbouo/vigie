@@ -51,20 +51,32 @@ algorithme de priorisation.**
 
 ### Choix du moteur IA du Diagnostic (multi-LLM)
 
-Deux modes, même contrat de sortie (`rapport.md` + `findings.json` validé
-par le schéma commun) — le dashboard et le Top 3 ne voient aucune différence :
+Le **provider** (qui répond) et le **mode** (comment l'audit est mené) sont
+indépendants. Même contrat de sortie partout (`rapport.md` +
+`findings.json` validé par le schéma commun) — le dashboard et le Top 3 ne
+voient aucune différence.
 
-| Provider | Mode | Fonctionnement |
-|---|---|---|
-| `anthropic` (défaut) | agent-sdk | Audit agentique complet : Claude Agent SDK + skill `claude-seo`, navigation autonome |
-| `xai` | chat | Notre crawler collecte les données, Grok (`grok-4` par défaut, API `https://api.x.ai/v1`) analyse et rédige |
-| `openai-compatible` | chat | Idem avec n'importe quel endpoint `/chat/completions` (`LLM_BASE_URL` + `LLM_MODEL` requis) |
+Les deux modes :
 
-Configuration serveur par `LLM_PROVIDER` (+ `XAI_API_KEY` / `LLM_API_KEY`,
-`LLM_MODEL`, `LLM_BASE_URL`, voir `.env.example`). Surcharge possible par
-job : `POST /sites/:id/diagnostic` accepte `{"provider": "xai"}`. Le
-provider et le modèle utilisés sont journalisés dans `cost_log` avec les
-tokens consommés (tarifs configurables via `LLM_COST_PER_MTOK_*`).
+- **`agent-sdk` (agentique)** — le Claude Agent SDK + skill `claude-seo` :
+  l'agent navigue lui-même, creuse ses hypothèses, vérifie ses constats.
+  Le plus profond ; coût et durée variables.
+- **`chat`** — notre crawler déterministe collecte les données du site
+  (plafonds quick/full), le LLM les analyse via `/chat/completions`.
+  Coût prévisible (2 appels), mais le modèle ne voit que le digest.
+
+| Provider | Modes supportés | Défaut | Notes |
+|---|---|---|---|
+| `anthropic` | agent-sdk | agent-sdk | Endpoint et modèle par défaut du SDK |
+| `xai` | chat, agent-sdk | chat | Chat : `grok-4` sur `https://api.x.ai/v1`. Agent-sdk : via l'endpoint compatible Anthropic `https://api.x.ai` — **à valider sur sites de test avant de facturer** (le suivi du protocole d'outils dépend du modèle) |
+| `openai-compatible` | chat | chat | `LLM_BASE_URL` + `LLM_MODEL` requis |
+
+Configuration serveur : `LLM_PROVIDER` + `LLM_MODE` (voir `.env.example`).
+Surcharge par job : `POST /sites/:id/diagnostic` accepte
+`{"provider": "xai", "mode": "agent-sdk"}` — combinaison validée à la
+création du job. Provider, mode et modèle sont journalisés dans `cost_log`
+avec les tokens consommés (tarifs chat configurables via
+`LLM_COST_PER_MTOK_*` ; en agentique le coût vient du SDK).
 
 ## Démarrage
 
